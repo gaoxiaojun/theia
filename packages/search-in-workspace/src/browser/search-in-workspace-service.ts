@@ -110,7 +110,7 @@ export class SearchInWorkspaceService implements SearchInWorkspaceClient {
         }
 
         const roots = await this.workspaceService.roots;
-        const searchId = await this.searchServer.search(what, roots.map(r => r.uri), opts);
+        const searchId = await this.searchServer.search(what, roots.map(r => r.resource.toString()), opts);
         this.pendingSearches.set(searchId, callbacks);
         this.lastKnownSearchId = searchId;
 

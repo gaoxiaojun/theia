@@ -149,7 +149,7 @@ export class FileNavigatorModel extends FileTreeModel {
     protected createMultipleRootNode(): WorkspaceNode {
         const workspace = this.workspaceService.workspace;
         let name = workspace
-            ? new URI(workspace.uri).path.name
+            ? workspace.resource.path.name
             : 'untitled';
         name += ' (Workspace)';
         return WorkspaceNode.createRoot(name);

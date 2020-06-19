@@ -24,13 +24,12 @@ import { Container, ContainerModule } from 'inversify';
 import { SelectionService, ILogger } from '@theia/core/lib/common';
 import { MockLogger } from '@theia/core/lib/common/test/mock-logger';
 import URI from '@theia/core/lib/common/uri';
-import { FileSystem } from '@theia/filesystem/lib/common';
 import { OpenerService } from '@theia/core/lib/browser';
 import { MockOpenerService } from '@theia/core/lib/browser/test/mock-opener-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { MessageClient } from '@theia/core/lib/common/message-service-protocol';
-import { FileSystemNode } from '@theia/filesystem/lib/node/node-filesystem';
 import { FileUri } from '@theia/core/lib/node/file-uri';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 
 disableJSDOM();
 
@@ -43,7 +42,7 @@ beforeEach(() => {
         bind(SelectionService).toSelf().inSingletonScope();
         bind(NavigatorDiff).toSelf().inSingletonScope();
         bind(OpenerService).to(MockOpenerService);
-        bind(FileSystem).to(FileSystemNode).inSingletonScope();
+        bind(FileService).toConstantValue(<FileService>{});
         bind(MessageService).toSelf().inSingletonScope();
         bind(MessageClient).toSelf().inSingletonScope();
     });

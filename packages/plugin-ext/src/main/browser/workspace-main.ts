@@ -19,20 +19,17 @@ import { interfaces, injectable } from 'inversify';
 import { WorkspaceExt, StorageExt, MAIN_RPC_CONTEXT, WorkspaceMain, WorkspaceFolderPickOptionsMain } from '../../common/plugin-api-rpc';
 import { RPCProtocol } from '../../common/rpc-protocol';
 import { URI as Uri } from 'vscode-uri';
-import { UriComponents, theiaUritoUriComponents } from '../../common/uri-components';
+import { UriComponents } from '../../common/uri-components';
 import { QuickOpenModel, QuickOpenItem, QuickOpenMode } from '@theia/core/lib/browser/quick-open/quick-open-model';
 import { MonacoQuickOpenService } from '@theia/monaco/lib/browser/monaco-quick-open-service';
-import { FileStat } from '@theia/filesystem/lib/common';
 import { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
 import URI from '@theia/core/lib/common/uri';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { Resource } from '@theia/core/lib/common/resource';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Emitter, Event, ResourceResolver } from '@theia/core';
-import { FileWatcherSubscriberOptions } from '../../common/plugin-api-rpc-model';
-import { InPluginFileSystemWatcherManager } from './in-plugin-filesystem-watcher-manager';
 import { PluginServer } from '../../common/plugin-protocol';
-import { FileSystemPreferences, FileSystemWatcher } from '@theia/filesystem/lib/browser';
+import { FileSystemPreferences } from '@theia/filesystem/lib/browser';
 
 export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
 
@@ -44,9 +41,7 @@ export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
 
     private fileSearchService: FileSearchService;
 
-    private inPluginFileSystemWatcherManager: InPluginFileSystemWatcherManager;
-
-    private roots: FileStat[];
+    private roots: string[];
 
     private resourceResolver: TextContentResourceResolver;
 
@@ -55,8 +50,6 @@ export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
     private workspaceService: WorkspaceService;
 
     private fsPreferences: FileSystemPreferences;
-
-    private fileSystemWatcher: FileSystemWatcher;
 
     protected readonly toDispose = new DisposableCollection();
 
@@ -69,41 +62,10 @@ export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
         this.pluginServer = container.get(PluginServer);
         this.workspaceService = container.get(WorkspaceService);
         this.fsPreferences = container.get(FileSystemPreferences);
-        this.fileSystemWatcher = container.get(FileSystemWatcher);
-        this.inPluginFileSystemWatcherManager = container.get(InPluginFileSystemWatcherManager);
 
-        this.processWorkspaceFoldersChanged(this.workspaceService.tryGetRoots());
+        this.processWorkspaceFoldersChanged(this.workspaceService.tryGetRoots().map(root => root.resource.toString()));
         this.toDispose.push(this.workspaceService.onWorkspaceChanged(roots => {
-            this.processWorkspaceFoldersChanged(roots);
-        }));
-
-        this.toDispose.push(this.fileSystemWatcher.onWillCreate(event => {
-            event.waitUntil(this.proxy.$onWillCreateFiles({ files: [theiaUritoUriComponents(event.uri)] }));
-        }));
-        this.toDispose.push(this.fileSystemWatcher.onDidCreate(event => {
-            this.proxy.$onDidCreateFiles({ files: [theiaUritoUriComponents(event.uri)] });
-        }));
-        this.toDispose.push(this.fileSystemWatcher.onWillMove(event => {
-            event.waitUntil(this.proxy.$onWillRenameFiles({
-                files: [{
-                    oldUri: theiaUritoUriComponents(event.sourceUri),
-                    newUri: theiaUritoUriComponents(event.targetUri),
-                }],
-            }));
-        }));
-        this.toDispose.push(this.fileSystemWatcher.onDidMove(event => {
-            this.proxy.$onDidRenameFiles({
-                files: [{
-                    oldUri: theiaUritoUriComponents(event.sourceUri),
-                    newUri: theiaUritoUriComponents(event.targetUri),
-                }],
-            });
-        }));
-        this.toDispose.push(this.fileSystemWatcher.onWillDelete(event => {
-            event.waitUntil(this.proxy.$onWillDeleteFiles({ files: [theiaUritoUriComponents(event.uri)] }));
-        }));
-        this.toDispose.push(this.fileSystemWatcher.onDidDelete(event => {
-            this.proxy.$onDidDeleteFiles({ files: [theiaUritoUriComponents(event.uri)] });
+            this.processWorkspaceFoldersChanged(roots.map(root => root.resource.toString()));
         }));
     }
 
@@ -111,7 +73,7 @@ export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
         this.toDispose.dispose();
     }
 
-    protected async processWorkspaceFoldersChanged(roots: FileStat[]): Promise<void> {
+    protected async processWorkspaceFoldersChanged(roots: string[]): Promise<void> {
         if (this.isAnyRootChanged(roots) === false) {
             return;
         }
@@ -126,12 +88,12 @@ export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
 
     }
 
-    private isAnyRootChanged(roots: FileStat[]): boolean {
+    private isAnyRootChanged(roots: string[]): boolean {
         if (!this.roots || this.roots.length !== roots.length) {
             return true;
         }
 
-        return this.roots.some((root, index) => root.uri !== roots[index].uri);
+        return this.roots.some((root, index) => root !== roots[index]);
     }
 
     $pickWorkspaceFolder(options: WorkspaceFolderPickOptionsMain): Promise<theia.WorkspaceFolder | undefined> {
@@ -149,7 +111,7 @@ export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
             let returnValue: theia.WorkspaceFolder | undefined;
 
             const items = this.roots.map(root => {
-                const rootUri = Uri.parse(root.uri);
+                const rootUri = Uri.parse(root);
                 const rootPathName = rootUri.path.substring(rootUri.path.lastIndexOf('/') + 1);
                 return new QuickOpenItem({
                     label: rootPathName,
@@ -194,7 +156,7 @@ export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
     async $startFileSearch(includePattern: string, includeFolderUri: string | undefined, excludePatternOrDisregardExcludes?: string | false,
         maxResults?: number): Promise<UriComponents[]> {
         const roots: FileSearchService.RootOptions = {};
-        const rootUris = includeFolderUri ? [includeFolderUri] : this.roots.map(r => r.uri);
+        const rootUris = includeFolderUri ? [includeFolderUri] : this.roots;
         for (const rootUri of rootUris) {
             roots[rootUri] = {};
         }
@@ -225,17 +187,6 @@ export class WorkspaceMainImpl implements WorkspaceMain, Disposable {
         }
         const uriStrs = await this.fileSearchService.find('', opts);
         return uriStrs.map(uriStr => Uri.parse(uriStr));
-    }
-
-    async $registerFileSystemWatcher(options: FileWatcherSubscriberOptions): Promise<string> {
-        const handle = this.inPluginFileSystemWatcherManager.registerFileWatchSubscription(options, this.proxy);
-        this.toDispose.push(Disposable.create(() => this.inPluginFileSystemWatcherManager.unregisterFileWatchSubscription(handle)));
-        return handle;
-    }
-
-    $unregisterFileSystemWatcher(watcherId: string): Promise<void> {
-        this.inPluginFileSystemWatcherManager.unregisterFileWatchSubscription(watcherId);
-        return Promise.resolve();
     }
 
     async $registerTextDocumentContentProvider(scheme: string): Promise<void> {
