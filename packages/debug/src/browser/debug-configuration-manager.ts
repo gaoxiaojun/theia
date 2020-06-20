@@ -26,7 +26,7 @@ import URI from '@theia/core/lib/common/uri';
 import { Emitter, Event, WaitUntilEvent } from '@theia/core/lib/common/event';
 import { EditorManager, EditorWidget } from '@theia/editor/lib/browser';
 import { MonacoEditor } from '@theia/monaco/lib/browser/monaco-editor';
-import { PreferenceService, StorageService } from '@theia/core/lib/browser';
+import { PreferenceService, StorageService, LabelProvider } from '@theia/core/lib/browser';
 import { QuickPickService } from '@theia/core/lib/common/quick-pick-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { DebugConfigurationModel } from './debug-configuration-model';
@@ -67,6 +67,9 @@ export class DebugConfigurationManager {
 
     @inject(WorkspaceVariableContribution)
     protected readonly workspaceVariables: WorkspaceVariableContribution;
+
+    @inject(LabelProvider)
+    protected readonly labelProvider: LabelProvider;
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
@@ -189,7 +192,20 @@ export class DebugConfigurationManager {
         }
     }
     async addConfiguration(): Promise<void> {
-        const { model } = this;
+        let model: DebugConfigurationModel | undefined;
+        if (this.models.size > 1) {
+            model = await this.quickPick.show(Array.from(this.models.entries()).map(entry => {
+                const [rootFolder, modelValue] = entry;
+                return {
+                    label: this.labelProvider.getName(new URI(rootFolder)),
+                    value: modelValue
+                };
+            }), {
+                placeholder: 'Select for which root folder to add the configuration to'
+            });
+        } else {
+            model = this.model;
+        }
         if (!model) {
             return;
         }
